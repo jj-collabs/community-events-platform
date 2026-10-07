@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Community Events</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:860px;margin:1rem auto;padding:0 1rem;color:#222}
+  header{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;border-bottom:1px solid #ccc;padding-bottom:.5rem}
+  .card{border:1px solid #ccc;border-radius:6px;padding:.7rem;margin:.6rem 0}
+  .tag{font-size:.75rem;padding:1px 6px;border-radius:8px;background:#eee}
+  .PENDING_REVIEW{background:#ffe9a8}.PUBLISHED{background:#c9f2c9}
+  #msg{padding:.5rem;border-radius:4px;display:none}.err{background:#fdd}.ok{background:#dfd}
+  input,textarea{display:block;margin:.3rem 0;width:100%;box-sizing:border-box;padding:.3rem}
+  button{margin-right:.4rem}
+  li{font-size:.9rem}
+</style>
+</head>
+<body>
+<header>
+  <h1 style="margin:0;font-size:1.3rem">Community Events</h1>
+  <label>Role
+    <select id="role"><option value="visitor">Visitor</option><option value="organiser">Event Organiser</option><option value="admin">Administrator</option></select>
+  </label>
+  <label id="userWrap" hidden>Organiser
+    <select id="user"><option>organiser-1</option><option>organiser-2</option></select>
+  </label>
+  <small>Demo roles only - no real authentication.</small>
+</header>
+<p id="msg"></p>
+
+<form id="form" class="card" hidden>
+  <strong id="formTitle">Create event</strong>
+  <input type="hidden" id="eid">
+  <input id="title" placeholder="Title" required>
+  <textarea id="desc" placeholder="Description"></textarea>
+  <input id="when" type="datetime-local" required>
+  <input id="cap" type="number" step="1" placeholder="Capacity (whole number > 0)" required>
+  <button type="submit">Save</button><button type="button" id="cancel">Clear</button>
+</form>
+
+<h2 id="listTitle">Events</h2>
+<div id="events"></div>
+
+<h2>Activity</h2>
+<ul id="activity"></ul>
+
+<script>
+const $ = s => document.querySelector(s);
+const role = () => $('#role').value;
+
+async function api(path, opt = {}) {
+  const r = await fetch('/api' + path, {
+    ...opt,
+    headers: {'Content-Type': 'application/json', 'X-Role': role(), 'X-User': $('#user').value}
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw d;
+  return d;
+}
+function show(text, ok) {
+  const m = $('#msg'); m.textContent = text; m.className = ok ? 'ok' : 'err'; m.style.display = 'block';
+}
+const toLocal = iso => { const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+function el(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }  // textContent => plain text only
+function btn(label, fn) { const b = el('button', label); b.onclick = fn; return b; }
+
+async function act(fn, okText) {
+  try { await fn(); if (okText) show(okText, true); } catch (e) { show(e.message || 'Request failed', false); }
+  load();
+}
+
+function card(ev) {
+  const c = el('div', undefined, 'card');
+  const h = el('strong', ev.title); c.append(h, ' ', el('span', ev.status, 'tag ' + ev.status));
+  c.append(el('div', ev.description || ''));
+  c.append(el('small', `${new Date(ev.starts_at).toLocaleString()} · ${ev.registered}/${ev.capacity} registered · ${ev.id} · ${ev.organiser_id}`));
+  const row = el('div'); row.style.marginTop = '.4rem';
+  if (role() === 'visitor')
+    row.append(btn('Register interest', () => act(async () => {
+      const r = await api(`/events/${ev.id}/registrations`, {method: 'POST'});
+      show('Registered anonymously: ' + r.registration_id, true);
+    })));
+  if (role() === 'organiser')
+    row.append(btn('Edit', () => {
+      $('#formTitle').textContent = 'Edit ' + ev.id; $('#eid').value = ev.id; $('#title').value = ev.title;
+      $('#desc').value = ev.description || ''; $('#when').value = toLocal(ev.starts_at); $('#cap').value = ev.capacity;
+      window.scrollTo(0, 0);
+    }));
+  if (role() === 'admin' && ev.status === 'PENDING_REVIEW')
+    row.append(btn('Publish', () => act(() => api(`/events/${ev.id}/publish`, {method: 'POST'}), ev.id + ' published.')));
+  c.append(row);
+  return c;
+}
+
+async function load() {
+  $('#form').hidden = role() !== 'organiser';
+  $('#userWrap').hidden = role() !== 'organiser';
+  $('#listTitle').textContent = {visitor: 'Published events', organiser: 'My events', admin: 'All events'}[role()];
+  try {
+    const evs = await api('/events');
+    $('#events').replaceChildren(...(evs.length ? evs.map(card) : [el('p', 'No events to show.')]));
+    const acts = await api('/activity');
+    $('#activity').replaceChildren(...acts.map(a => el('li', `${new Date(a.created_at).toLocaleTimeString()} - ${a.message}`)));
+  } catch (e) { show(e.message || 'Could not load events', false); }
+}
+
+$('#form').onsubmit = ev => {
+  ev.preventDefault();
+  const id = $('#eid').value;
+  const body = JSON.stringify({
+    title: $('#title').value, description: $('#desc').value,
+    starts_at: $('#when').value ? new Date($('#when').value).toISOString() : '',
+    capacity: $('#cap').value === '' ? null : Number($('#cap').value)
+  });
+  act(async () => {
+    await api(id ? '/events/' + id : '/events', {method: id ? 'PUT' : 'POST', body});
+    clearForm();
+  }, id ? 'Event updated.' : 'Event created (pending review).');
+};
+function clearForm() { $('#form').reset(); $('#eid').value = ''; $('#formTitle').textContent = 'Create event'; }
+$('#cancel').onclick = clearForm;
+$('#role').onchange = $('#user').onchange = () => { $('#msg').style.display = 'none'; clearForm(); load(); };
+load();
+</script>
+</body>
+</html>
