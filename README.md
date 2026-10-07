@@ -87,4 +87,4 @@ The request ID is accepted from `X-Request-ID` or generated, and returned in the
 - Next: split into modules, add Docker Compose, GitHub Actions CI, a second Notification service with correlation-ID propagation, and an activity history screen.
 
 ## AI-use declaration
-> **Edit this so it is true for you.** Example: I used Claude (Anthropic) to brainstorm the design, generate the initial code, tests and README. I then read through all the code, ran the app and test suite myself, walked through each demo scenario, and changed [list what you changed]. I can explain every part of this submission.
+> I used Claude (Anthropic) to brainstorm the design, generate the initial code, tests and README. I then read through all the code, ran the app and test suite myself, walked through each demo scenario, and changed README where necessary. I can explain every part of this submission.
